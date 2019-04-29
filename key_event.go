@@ -33,7 +33,7 @@ func KeyEventController() http.Handler {
 		for iter := keyEventList.data.Back(); iter != nil; iter = iter.Prev() {
 			v = append(v, iter.Value)
 		}
-		utils.RenderJson(w, v)
+		utils.RenderDataJson(w, http.StatusOK, v)
 	})
 }
 

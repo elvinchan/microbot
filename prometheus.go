@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/pangpanglabs/microbot/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -18,6 +19,9 @@ type Option struct {
 
 func MetricsController() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if utils.IsPublicIP(utils.RealIP(r)) {
+			utils.RenderErrorJson(w, http.StatusForbidden, "Not allowed to access")
+		}
 		// Routing
 		t := r.FormValue("t")
 		switch t {
@@ -42,7 +46,8 @@ func ProfController() http.Handler {
 			}
 
 			if durationExceedsWriteTimeout(r, float64(sec)) {
-				serveError(w, http.StatusBadRequest, "profile duration exceeds server's WriteTimeout")
+				w.Header().Set("X-Go-Pprof", "1")
+				utils.RenderErrorJson(w, http.StatusBadRequest, "Profile duration exceeds server's WriteTimeout")
 				return
 			}
 
@@ -52,7 +57,9 @@ func ProfController() http.Handler {
 			w.Header().Set("Content-Disposition", `attachment; filename="profile"`)
 			if err := pprof.StartCPUProfile(w); err != nil {
 				// StartCPUProfile failed, so no writes yet.
-				serveError(w, http.StatusInternalServerError,
+				w.Header().Set("X-Go-Pprof", "1")
+				w.Header().Del("Content-Disposition")
+				utils.RenderErrorJson(w, http.StatusInternalServerError,
 					fmt.Sprintf("Could not enable CPU profiling: %s", err))
 				return
 			}
@@ -61,7 +68,8 @@ func ProfController() http.Handler {
 		} else {
 			p := pprof.Lookup(name)
 			if p == nil {
-				serveError(w, http.StatusNotFound, "Unknown profile")
+				w.Header().Set("X-Go-Pprof", "1")
+				utils.RenderErrorJson(w, http.StatusNotFound, "Unknown profile")
 				return
 			}
 			gc, _ := strconv.Atoi(r.FormValue("gc"))
@@ -94,12 +102,4 @@ func sleep(w http.ResponseWriter, d time.Duration) {
 	case <-time.After(d):
 	case <-clientGone:
 	}
-}
-
-func serveError(w http.ResponseWriter, status int, txt string) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Go-Pprof", "1")
-	w.Header().Del("Content-Disposition")
-	w.WriteHeader(status)
-	fmt.Fprintln(w, txt)
 }

@@ -7,16 +7,6 @@ import (
 	"strings"
 )
 
-func RenderJson(w http.ResponseWriter, v interface{}) {
-	bs, err := json.Marshal(v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.Write(bs)
-}
-
 type Resp struct {
 	Result  interface{} `json:"result"`
 	Success bool        `json:"success"`
@@ -27,22 +17,25 @@ type RespError struct {
 	Message string `json:"message"`
 }
 
-func RenderDataJson(w http.ResponseWriter, data interface{}) {
-	RenderJson(w, Resp{Result: data, Success: true})
-}
-
-func RenderErrorJson(w http.ResponseWriter, err error) {
-	RenderJson(w, Resp{Success: false, Error: RespError{
-		Message: err.Error(),
-	}})
-}
-
-func Render(w http.ResponseWriter, data interface{}, err error) {
+func renderJson(w http.ResponseWriter, status int, v interface{}) {
+	bs, err := json.Marshal(v)
 	if err != nil {
-		RenderErrorJson(w, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	RenderDataJson(w, data)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	w.Write(bs)
+}
+
+func RenderDataJson(w http.ResponseWriter, status int, v interface{}) {
+	renderJson(w, status, Resp{Result: v, Success: true})
+}
+
+func RenderErrorJson(w http.ResponseWriter, status int, msg string) {
+	renderJson(w, status, Resp{Error: RespError{
+		Message: msg,
+	}})
 }
 
 func IsPublicIP(ip string) bool {
