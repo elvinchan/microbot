@@ -6,7 +6,7 @@ type oracle struct {
 	Base
 }
 
-func (db *oracle) GetTables() ([]Table, error) {
+func (db *oracle) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := "SELECT table_name FROM user_tables"
 	db.LogSQL(s, args)
@@ -19,7 +19,7 @@ func (db *oracle) GetTables() ([]Table, error) {
 
 	var tables []Table
 	for rows.Next() {
-		table := NewTable()
+		var table Table
 		err = rows.Scan(&table.Name)
 		if err != nil {
 			return nil, err
@@ -30,7 +30,7 @@ func (db *oracle) GetTables() ([]Table, error) {
 	return tables, nil
 }
 
-func (db *oracle) GetColumns(tableName string) ([]Column, error) {
+func (db *oracle) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
 	s := "SELECT column_name, data_default, data_type, data_length, data_precision, data_scale," +
 		"nullable FROM USER_TAB_COLUMNS WHERE table_name = :1"
@@ -50,9 +50,8 @@ func (db *oracle) GetColumns(tableName string) ([]Column, error) {
 			return nil, err
 		}
 		col := new(Column)
-		col.Indexes = make(map[string]int)
 		col.Name = strings.Trim(*colName, `" `)
-		col.Default = *colDefault
+		col.Default = colDefault
 		col.Type = strings.ToLower(*dataType)
 		if *nullable == "Y" {
 			col.Nullable = true
@@ -62,7 +61,7 @@ func (db *oracle) GetColumns(tableName string) ([]Column, error) {
 	return cols, nil
 }
 
-func (db *oracle) GetIndexes(tableName string) (map[string]Index, error) {
+func (db *oracle) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := "SELECT t.column_name, i.uniqueness, i.index_name FROM user_ind_columns t, user_indexes i " +
 		"WHERE t.index_name = i.index_name AND t.table_name = i.table_name AND t.table_name =:1"
@@ -74,9 +73,8 @@ func (db *oracle) GetIndexes(tableName string) (map[string]Index, error) {
 	}
 	defer rows.Close()
 
-	indexes := make(map[string]Index, 0)
+	indexes := make(map[string]*Index)
 	for rows.Next() {
-		var indexType int
 		var indexName, colName, uniqueness string
 		err = rows.Scan(&colName, &uniqueness, &indexName)
 		if err != nil {
@@ -88,20 +86,20 @@ func (db *oracle) GetIndexes(tableName string) (map[string]Index, error) {
 			return nil, err
 		}
 
+		var isUnique bool
 		if uniqueness == "UNIQUE" {
-			indexType = UniqueType
-		} else {
-			indexType = IndexType
+			isUnique = true
 		}
 
-		var index Index
+		var index *Index
 		var ok bool
 		if index, ok = indexes[indexName]; !ok {
-			index.Type = indexType
+			index = new(Index)
+			index.IsUnique = isUnique
 			index.Name = indexName
 			indexes[indexName] = index
 		}
-		index.AddColumn(colName)
+		index.Columns = append(index.Columns, colName)
 	}
 	return indexes, nil
 }

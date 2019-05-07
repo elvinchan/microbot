@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"os"
 )
 
 type DBType string
@@ -20,12 +21,14 @@ const (
 )
 
 type Dialect interface {
-	Init(*sql.DB, DBType)
+	Init(*sql.DB, DBType, string)
+	SetLogger(logger ILogger)
 	DB() *sql.DB
 	DBType() DBType
-	GetTables() ([]Table, error)
-	GetColumns(tableName string) ([]Column, error)
-	GetIndexes(tableName string) (map[string]Index, error)
+	Tables() ([]Table, error)
+	// not use map in result because we need sequence of Columns
+	Columns(tableName string) ([]Column, error)
+	Indexes(tableName string) (map[string]*Index, error)
 }
 
 type Base struct {
@@ -36,32 +39,41 @@ type Base struct {
 }
 
 type Table struct {
-	Name    string           `json:"name"`
-	Rows    int64            `json:"rows"`
-	Indexes map[string]Index `json:"indexes"`
-	Columns []Column         `json:"column"`
+	Name    string   `json:"name"`
+	Rows    int64    `json:"rows"`
+	Engine  string   `json:"engine,omitempty"` // Only available for MySQL currently
+	Indexes []Index  `json:"indexes"`
+	Columns []Column `json:"columns"`
+	Comment string   `json:"comment"`
 }
 
 type Column struct {
-	Name            string         `json:"name"`
-	Type            string         `json:"type"`
-	Nullable        bool           `json:"nullable"`
-	Default         string         `json:"default"`
-	Indexes         map[string]int `json:"indexes"`
-	IsPrimaryKey    bool           `json:"isPrimaryKey"`
-	IsAutoIncrement bool           `json:"isAutoIncrement"`
-	Comment         string         `json:"comment"`
+	Name            string   `json:"name"`
+	Type            string   `json:"type"`
+	Nullable        bool     `json:"nullable"`
+	Default         *string  `json:"default"`
+	Indexes         []string `json:"indexes"`
+	IsPrimaryKey    bool     `json:"isPrimaryKey"`
+	IsAutoIncrement bool     `json:"isAutoIncrement"`
+	Comment         string   `json:"comment"`
 }
 
 type Index struct {
-	Name string   `json:"name"`
-	Type int      `json:"type"`
-	Cols []string `json:"cols"`
+	Name     string   `json:"name"`
+	IsUnique bool     `json:"isUnique"`
+	Columns  []string `json:"columns"`
 }
 
-func (b *Base) Init(d *sql.DB, dbType DBType) {
+func (b *Base) Init(d *sql.DB, dbType DBType, dbName string) {
 	b.db = d
 	b.dbType = dbType
+	b.name = dbName
+	logger := NewDefaultLogger(os.Stdout)
+	b.SetLogger(logger)
+}
+
+func (b *Base) SetLogger(logger ILogger) {
+	b.logger = logger
 }
 
 func (b *Base) DB() *sql.DB {
@@ -82,23 +94,10 @@ func (b *Base) LogSQL(sql string, args ...interface{}) {
 	}
 }
 
-func NewTable() Table {
-	return Table{
-		Indexes: make(map[string]Index),
-	}
-}
-
-// add columns which will be composite index
-func (index *Index) AddColumn(cols ...string) {
-	for _, col := range cols {
-		index.Cols = append(index.Cols, col)
-	}
-}
-
-func (table *Table) GetColumn(name string) *Column {
-	for _, c := range table.Columns {
+func (table *Table) Column(name string) *Column {
+	for i, c := range table.Columns {
 		if c.Name == name {
-			return &c
+			return &table.Columns[i]
 		}
 	}
 	return nil

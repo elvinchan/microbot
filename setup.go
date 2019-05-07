@@ -9,15 +9,15 @@ import (
 
 var dialects []db.Dialect
 
-func RegisterDB(d *sql.DB, dbType db.DBType) error {
+func RegisterDB(d *sql.DB, dbType, dbName string) error {
 	if d == nil {
 		return errors.New("microbot: nil DB")
 	}
-	dialect := db.QueryDialect(dbType)
+	dialect := db.QueryDialect(db.DBType(dbType))
 	if dialect == nil {
 		return errors.New("microbot: Unsupported DBType")
 	}
-	dialect.Init(d, dbType)
+	dialect.Init(d, db.DBType(dbType), dbName)
 	dialects = append(dialects, dialect)
 	return nil
 }

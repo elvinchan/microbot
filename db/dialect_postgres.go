@@ -3,8 +3,6 @@ package db
 import (
 	"fmt"
 	"strings"
-
-	"github.com/go-xorm/core"
 )
 
 type postgres struct {
@@ -12,7 +10,7 @@ type postgres struct {
 	Schema string
 }
 
-func (db *postgres) GetTables() ([]Table, error) {
+func (db *postgres) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := "SELECT tablename FROM pg_tables"
 	if len(db.Schema) != 0 {
@@ -27,19 +25,19 @@ func (db *postgres) GetTables() ([]Table, error) {
 	defer rows.Close()
 	tables := make([]Table, 0)
 	for rows.Next() {
-		table := NewTable()
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
 			return nil, err
 		}
+		var table Table
 		table.Name = name
 		tables = append(tables, table)
 	}
 	return tables, nil
 }
 
-func (db *postgres) GetColumns(tableName string) ([]Column, error) {
+func (db *postgres) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
 	s := `SELECT column_name, column_default, is_nullable, data_type, character_maximum_length, numeric_precision, numeric_precision_radix ,
     CASE WHEN p.contype = 'p' THEN true ELSE false END AS primarykey,
@@ -70,7 +68,6 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 	var cols []Column
 	for rows.Next() {
 		col := new(Column)
-		col.Indexes = make(map[string]int)
 
 		var colName, isNullable, dataType string
 		var maxLenStr, colDefault, numPrecision, numRadix *string
@@ -86,7 +83,7 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 			if isPK {
 				col.IsPrimaryKey = true
 			} else {
-				col.Default = *colDefault
+				col.Default = colDefault
 			}
 		}
 
@@ -101,7 +98,7 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 	return cols, nil
 }
 
-func (db *postgres) GetIndexes(tableName string) (map[string]Index, error) {
+func (db *postgres) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := fmt.Sprintf("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=$1")
 	if len(db.Schema) != 0 {
@@ -116,9 +113,8 @@ func (db *postgres) GetIndexes(tableName string) (map[string]Index, error) {
 	}
 	defer rows.Close()
 
-	indexes := make(map[string]Index, 0)
+	indexes := make(map[string]*Index)
 	for rows.Next() {
-		var indexType int
 		var indexName, indexdef string
 		var colNames []string
 		err = rows.Scan(&indexName, &indexdef)
@@ -129,10 +125,9 @@ func (db *postgres) GetIndexes(tableName string) (map[string]Index, error) {
 		if strings.HasSuffix(indexName, "_pkey") {
 			continue
 		}
+		var isUnique bool
 		if strings.HasPrefix(indexdef, "CREATE UNIQUE INDEX") {
-			indexType = core.UniqueType
-		} else {
-			indexType = core.IndexType
+			isUnique = true
 		}
 		colNames = getIndexColName(indexdef)
 		if strings.HasPrefix(indexName, "IDX_"+tableName) || strings.HasPrefix(indexName, "UQE_"+tableName) {
@@ -142,14 +137,15 @@ func (db *postgres) GetIndexes(tableName string) (map[string]Index, error) {
 			}
 		}
 
-		var index Index
+		var index *Index
 		var ok bool
 		if index, ok = indexes[indexName]; !ok {
-			index.Type = indexType
+			index = new(Index)
+			index.IsUnique = isUnique
 			index.Name = indexName
 			indexes[indexName] = index
 		}
-		index.AddColumn(colNames...)
+		index.Columns = append(index.Columns, colNames...)
 	}
 	return indexes, nil
 }

@@ -8,10 +8,10 @@ type mysql struct {
 	Base
 }
 
-func (db *mysql) GetTables() ([]Table, error) {
+func (db *mysql) Tables() ([]Table, error) {
 	args := []interface{}{db.name}
-	s := "SELECT `TABLE_NAME`, `ENGINE`, `TABLE_ROWS`, `AUTO_INCREMENT`, `TABLE_COMMENT` FROM " +
-		"`INFORMATION_SCHEMA`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND (`ENGINE`='MyISAM' OR `ENGINE` = 'InnoDB' OR `ENGINE` = 'TokuDB')"
+	s := "SELECT `TABLE_NAME`, `ENGINE`, `TABLE_ROWS`, `TABLE_COMMENT` FROM " +
+		"`INFORMATION_SCHEMA`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND (`ENGINE` = 'MyISAM' OR `ENGINE` = 'InnoDB' OR `ENGINE` = 'TokuDB')"
 	db.LogSQL(s, db.name)
 
 	rows, err := db.DB().Query(s, args...)
@@ -22,26 +22,27 @@ func (db *mysql) GetTables() ([]Table, error) {
 
 	var tables []Table
 	for rows.Next() {
-		table := NewTable()
 		var name, engine, comment string
 		var tableRows int64
-		var autoIncr *string
-		err = rows.Scan(&name, &engine, &tableRows, &autoIncr, &comment)
+		err = rows.Scan(&name, &engine, &tableRows, &comment)
 		if err != nil {
 			return nil, err
 		}
 
+		var table Table
 		table.Name = name
+		table.Engine = engine
+		table.Comment = comment
 		table.Rows = tableRows
 		tables = append(tables, table)
 	}
 	return tables, nil
 }
 
-func (db *mysql) GetColumns(tableName string) ([]Column, error) {
+func (db *mysql) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{db.name, tableName}
-	s := "SELECT `COLUMN_NAME`, `IS_NULLABLE`, `COLUMN_DEFAULT`, `COLUMN_TYPE`," +
-		" `COLUMN_KEY`, `EXTRA`,`COLUMN_COMMENT` FROM `INFORMATION_SCHEMA`.`COLUMNS` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` = ?"
+	s := "SELECT `COLUMN_NAME`, `IS_NULLABLE`, `COLUMN_DEFAULT`, `COLUMN_TYPE`, `COLUMN_KEY`, `EXTRA`, `COLUMN_COMMENT`" +
+		" FROM `INFORMATION_SCHEMA`.`COLUMNS` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` = ?"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -57,15 +58,13 @@ func (db *mysql) GetColumns(tableName string) ([]Column, error) {
 		if err = rows.Scan(&columnName, &isNullable, &colDefault, &colType, &colKey, &extra, &comment); err != nil {
 			return nil, err
 		}
-		col := new(Column)
-		col.Indexes = make(map[string]int)
-		// colName := strings.Trim(columnName, "` ")
+		var col Column
+		col.Name = strings.Trim(columnName, "` ")
 		col.Comment = comment
 		if isNullable == "YES" {
 			col.Nullable = true
 		}
-
-		col.Default = *colDefault
+		col.Default = colDefault
 		col.Type = strings.ToLower(colType)
 
 		if colKey == "PRI" {
@@ -75,12 +74,12 @@ func (db *mysql) GetColumns(tableName string) ([]Column, error) {
 		if extra == "auto_increment" {
 			col.IsAutoIncrement = true
 		}
-		cols = append(cols, *col)
+		cols = append(cols, col)
 	}
 	return cols, nil
 }
 
-func (db *mysql) GetIndexes(tableName string) (map[string]Index, error) {
+func (db *mysql) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{db.name, tableName}
 	s := "SELECT `INDEX_NAME`, `NON_UNIQUE`, `COLUMN_NAME` FROM `INFORMATION_SCHEMA`.`STATISTICS` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` = ?"
 	db.LogSQL(s, args)
@@ -91,9 +90,8 @@ func (db *mysql) GetIndexes(tableName string) (map[string]Index, error) {
 	}
 	defer rows.Close()
 
-	indexes := make(map[string]Index, 0)
+	indexes := make(map[string]*Index)
 	for rows.Next() {
-		var indexType int
 		var indexName, colName, nonUnique string
 		err = rows.Scan(&indexName, &nonUnique, &colName)
 		if err != nil {
@@ -104,22 +102,22 @@ func (db *mysql) GetIndexes(tableName string) (map[string]Index, error) {
 			continue
 		}
 
+		isUnique := true
 		if nonUnique == "YES" || nonUnique == "1" {
-			indexType = IndexType
-		} else {
-			indexType = UniqueType
+			isUnique = false
 		}
 
 		colName = strings.Trim(colName, "` ")
 
-		var index Index
+		var index *Index
 		var ok bool
 		if index, ok = indexes[indexName]; !ok {
-			index.Type = indexType
+			index = new(Index)
+			index.IsUnique = isUnique
 			index.Name = indexName
 			indexes[indexName] = index
 		}
-		index.AddColumn(colName)
+		index.Columns = append(index.Columns, colName)
 	}
 	return indexes, nil
 }

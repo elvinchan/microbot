@@ -2,10 +2,12 @@ package microbot
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/pangpanglabs/microbot/db"
+	"github.com/pangpanglabs/microbot/utils"
 )
 
 type DBPingResult struct {
@@ -40,31 +42,41 @@ type TableInfo struct {
 	Tables []db.Table `json:"tables"`
 }
 
+func TableInfoController() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v, err := GetTableInfo()
+		if err != nil {
+			utils.RenderErrorJson(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		utils.RenderDataJson(w, http.StatusOK, v)
+	})
+}
+
 func GetTableInfo() ([]TableInfo, error) {
 	var tableInfos []TableInfo
 	for _, d := range dialects {
-		tables, err := d.GetTables()
+		tables, err := d.Tables()
 		if err != nil {
 			return nil, err
 		}
 
 		for i := range tables {
-			cols, err := d.GetColumns(tables[i].Name)
+			cols, err := d.Columns(tables[i].Name)
 			if err != nil {
 				return nil, err
 			}
 
 			tables[i].Columns = cols
-			indexes, err := d.GetIndexes(tables[i].Name)
+			indexes, err := d.Indexes(tables[i].Name)
 			if err != nil {
 				return nil, err
 			}
-			tables[i].Indexes = indexes
-
 			for _, index := range indexes {
-				for _, name := range index.Cols {
-					if col := tables[i].GetColumn(name); col != nil {
-						col.Indexes[index.Name] = index.Type
+				tables[i].Indexes = append(tables[i].Indexes, *index)
+				for _, name := range index.Columns {
+					if col := tables[i].Column(name); col != nil {
+						col.Indexes = append(col.Indexes, index.Name)
 					} else {
 						return nil, fmt.Errorf("Unknown col %s in index %v of table %v", name, index.Name, tables[i].Name)
 					}

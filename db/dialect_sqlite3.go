@@ -12,10 +12,10 @@ type sqlite3 struct {
 	Base
 }
 
-func (db *sqlite3) GetTables() ([]Table, error) {
+func (db *sqlite3) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := "SELECT name FROM sqlite_master WHERE type='table'"
-	// db.LogSQL(s, args)
+	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
 	if err != nil {
@@ -25,7 +25,7 @@ func (db *sqlite3) GetTables() ([]Table, error) {
 
 	var tables []Table
 	for rows.Next() {
-		table := NewTable()
+		var table Table
 		err = rows.Scan(&table.Name)
 		if err != nil {
 			return nil, err
@@ -38,7 +38,7 @@ func (db *sqlite3) GetTables() ([]Table, error) {
 	return tables, nil
 }
 
-func (db *sqlite3) GetColumns(tableName string) ([]Column, error) {
+func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
 	s := "SELECT sql FROM sqlite_master WHERE type='table' and name = ?"
 	// db.LogSQL(s, args)
@@ -67,7 +67,7 @@ func (db *sqlite3) GetColumns(tableName string) ([]Column, error) {
 	reg := regexp.MustCompile(`[^\(,\)]*(\([^\(]*\))?`)
 	colCreates := reg.FindAllString(name[nStart+1:nEnd], -1)
 	var cols []Column
-	colSeq := make([]string, 0)
+	// colSeq := make([]string, 0)
 	for _, colStr := range colCreates {
 		reg = regexp.MustCompile(`,\s`)
 		colStr = reg.ReplaceAllString(colStr, ",")
@@ -88,8 +88,7 @@ func (db *sqlite3) GetColumns(tableName string) ([]Column, error) {
 		}
 
 		fields := strings.Fields(strings.TrimSpace(colStr))
-		col := new(Column)
-		col.Indexes = make(map[string]int)
+		var col Column
 		col.Nullable = true
 
 		for idx, field := range fields {
@@ -111,22 +110,22 @@ func (db *sqlite3) GetColumns(tableName string) ([]Column, error) {
 					col.Nullable = true
 				}
 			case "DEFAULT":
-				col.Default = fields[idx+1]
+				col.Default = &fields[idx+1]
 			}
 		}
 		// if !col.SQLType.IsNumeric() && !col.DefaultIsEmpty {
 		// 	col.Default = "'" + col.Default + "'"
 		// }
-		cols = append(cols, *col)
-		colSeq = append(colSeq, col.Name)
+		cols = append(cols, col)
+		// colSeq = append(colSeq, col.Name)
 	}
 	return cols, nil
 }
 
-func (db *sqlite3) GetIndexes(tableName string) (map[string]Index, error) {
+func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := "SELECT sql FROM sqlite_master WHERE type='index' and tbl_name = ?"
-	// db.LogSQL(s, args)
+	db.LogSQL(s, args)
 	fmt.Println(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -135,7 +134,7 @@ func (db *sqlite3) GetIndexes(tableName string) (map[string]Index, error) {
 	}
 	defer rows.Close()
 
-	indexes := make(map[string]Index, 0)
+	indexes := make(map[string]*Index)
 	for rows.Next() {
 		var tmpSQL sql.NullString
 		err = rows.Scan(&tmpSQL)
@@ -159,20 +158,17 @@ func (db *sqlite3) GetIndexes(tableName string) (map[string]Index, error) {
 		index.Name = indexName
 
 		if strings.HasPrefix(sql, "CREATE UNIQUE INDEX") {
-			index.Type = UniqueType
-		} else {
-			index.Type = IndexType
+			index.IsUnique = true
 		}
 
 		nStart := strings.Index(sql, "(")
 		nEnd := strings.Index(sql, ")")
 		colIndexes := strings.Split(sql[nStart+1:nEnd], ",")
 
-		index.Cols = make([]string, 0)
 		for _, col := range colIndexes {
-			index.Cols = append(index.Cols, strings.Trim(col, "` []"))
+			index.Columns = append(index.Columns, strings.Trim(col, "` []"))
 		}
-		indexes[index.Name] = *index
+		indexes[index.Name] = index
 	}
 
 	return indexes, nil

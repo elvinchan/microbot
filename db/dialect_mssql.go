@@ -9,9 +9,10 @@ type mssql struct {
 	Base
 }
 
-func (db *mssql) GetTables() ([]Table, error) {
+func (db *mssql) Tables() ([]Table, error) {
 	args := []interface{}{}
-	s := `SELECT name FROM sysobjects WHERE xtype = 'U'`
+	s := "SELECT a.name, b.rows FROM sys.sysobjects AS a" +
+		"INNER JOIN sys.sysindexes AS b ON a.id = b.id WHERE (b.indid IN (0, 1)) AND (a.type = 'U')"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -22,18 +23,20 @@ func (db *mssql) GetTables() ([]Table, error) {
 
 	var tables []Table
 	for rows.Next() {
-		table := NewTable()
+		var table Table
 		var name string
-		if err = rows.Scan(&name); err != nil {
+		var tableRows int64
+		if err = rows.Scan(&name, &tableRows); err != nil {
 			return nil, err
 		}
 		table.Name = strings.Trim(name, "` ")
+		table.Rows = tableRows
 		tables = append(tables, table)
 	}
 	return tables, nil
 }
 
-func (db *mssql) GetColumns(tableName string) ([]Column, error) {
+func (db *mssql) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{db.name, tableName}
 	s := `SELECT a.name AS name, b.name AS ctype, a.max_length, a.precision, a.scale, a.is_nullable AS nullable,
 	REPLACE(REPLACE(ISNULL(c.text, ''), '(', ''), ')', '') AS vdefault,
@@ -60,19 +63,18 @@ func (db *mssql) GetColumns(tableName string) ([]Column, error) {
 		if err = rows.Scan(&name, &ctype, &maxLen, &precision, &scale, &nullable, &vdefault, &isPK); err != nil {
 			return nil, err
 		}
-		col := new(Column)
-		col.Indexes = make(map[string]int)
+		var col Column
 		col.Name = strings.Trim(name, "` ")
 		col.Nullable = nullable
-		col.Default = vdefault
+		col.Default = &vdefault
 		col.IsPrimaryKey = isPK
 		// TODO col.Length
-		cols = append(cols, *col)
+		cols = append(cols, col)
 	}
 	return cols, nil
 }
 
-func (db *mssql) GetIndexes(tableName string) (map[string]Index, error) {
+func (db *mssql) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := `SELECT IXS.NAME AS [INDEX_NAME], C.NAME AS [COLUMN_NAME], IXS.is_unique AS [IS_UNIQUE] 
 	FROM SYS.INDEXES IXS
@@ -88,9 +90,8 @@ func (db *mssql) GetIndexes(tableName string) (map[string]Index, error) {
 	}
 	defer rows.Close()
 
-	indexes := make(map[string]Index, 0)
+	indexes := make(map[string]*Index)
 	for rows.Next() {
-		var indexType int
 		var indexName, colName, isUnique string
 
 		if err = rows.Scan(&indexName, &colName, &isUnique); err != nil {
@@ -102,22 +103,17 @@ func (db *mssql) GetIndexes(tableName string) (map[string]Index, error) {
 			return nil, err
 		}
 
-		if i {
-			indexType = UniqueType
-		} else {
-			indexType = IndexType
-		}
-
 		colName = strings.Trim(colName, "` ")
 
-		var index Index
+		var index *Index
 		var ok bool
 		if index, ok = indexes[indexName]; !ok {
-			index.Type = indexType
+			index = new(Index)
+			index.IsUnique = i
 			index.Name = indexName
 			indexes[indexName] = index
 		}
-		index.AddColumn(colName)
+		index.Columns = append(index.Columns, colName)
 	}
 	return indexes, nil
 }

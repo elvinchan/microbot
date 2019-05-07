@@ -23,12 +23,12 @@ func MetricsController() http.Handler {
 			utils.RenderErrorJson(w, http.StatusForbidden, "Not allowed to access")
 		}
 		// Routing
-		t := r.FormValue("t")
-		switch t {
+		target := r.FormValue("target")
+		switch target {
 		case "pprof":
 			ProfController().ServeHTTP(w, r)
-		case "db":
-			// TODO
+		case "table":
+			TableInfoController().ServeHTTP(w, r)
 		default:
 			promhttp.Handler().ServeHTTP(w, r)
 		}
