@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo"
-	"github.com/pangpanglabs/microbot/utils"
+	"github.com/pangpanglabs/microbot/common"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -32,7 +32,7 @@ func MiddlewareEchoWithConfig(config MiddlewareConfig) echo.MiddlewareFunc {
 				s := fmt.Sprintf("%d", c.Response().Status)
 				d := time.Since(begun).Nanoseconds() / int64(time.Millisecond)
 				ipType := "private"
-				if utils.IsPublicIP(c.RealIP()) {
+				if common.IsPublicIP(c.RealIP()) {
 					ipType = "public"
 				}
 

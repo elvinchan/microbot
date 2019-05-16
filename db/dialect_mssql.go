@@ -39,14 +39,14 @@ func (db *mssql) Tables() ([]Table, error) {
 func (db *mssql) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{db.name, tableName}
 	s := `SELECT a.name AS name, b.name AS ctype, a.max_length, a.precision, a.scale, a.is_nullable AS nullable,
-	REPLACE(REPLACE(ISNULL(c.text, ''), '(', ''), ')', '') AS vdefault,
-	ISNULL(i.is_primary_key, 0)
-	FROM sys.columns a
-	LEFT JOIN sys.types b ON a.user_type_id = b.user_type_id
-	LEFT JOIN sys.syscomments c ON a.default_object_id = c.id
-	LEFT OUTER JOIN sys.index_columns ic ON ic.object_id = a.object_id AND ic.column_id = a.column_id
-	LEFT OUTER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id 
-	WHERE a.object_id = object_id('` + tableName + `')`
+REPLACE(REPLACE(ISNULL(c.text, ''), '(', ''), ')', '') AS vdefault,
+ISNULL(i.is_primary_key, 0)
+FROM sys.columns a
+LEFT JOIN sys.types b ON a.user_type_id = b.user_type_id
+LEFT JOIN sys.syscomments c ON a.default_object_id = c.id
+LEFT OUTER JOIN sys.index_columns ic ON ic.object_id = a.object_id AND ic.column_id = a.column_id
+LEFT OUTER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id 
+WHERE a.object_id = object_id('` + tableName + `')`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)

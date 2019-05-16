@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -26,8 +25,7 @@ func (db *sqlite3) Tables() ([]Table, error) {
 	var tables []Table
 	for rows.Next() {
 		var table Table
-		err = rows.Scan(&table.Name)
-		if err != nil {
+		if err = rows.Scan(&table.Name); err != nil {
 			return nil, err
 		}
 		if table.Name == "sqlite_sequence" {
@@ -41,8 +39,8 @@ func (db *sqlite3) Tables() ([]Table, error) {
 func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
 	s := "SELECT sql FROM sqlite_master WHERE type='table' and name = ?"
-	// db.LogSQL(s, args)
-	fmt.Println(s, args)
+	db.LogSQL(s, args)
+
 	rows, err := db.DB().Query(s, args...)
 	if err != nil {
 		return nil, err
@@ -51,8 +49,7 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 
 	var name string
 	for rows.Next() {
-		err = rows.Scan(&name)
-		if err != nil {
+		if err = rows.Scan(&name); err != nil {
 			return nil, err
 		}
 		break
@@ -67,7 +64,6 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 	reg := regexp.MustCompile(`[^\(,\)]*(\([^\(]*\))?`)
 	colCreates := reg.FindAllString(name[nStart+1:nEnd], -1)
 	var cols []Column
-	// colSeq := make([]string, 0)
 	for _, colStr := range colCreates {
 		reg = regexp.MustCompile(`,\s`)
 		colStr = reg.ReplaceAllString(colStr, ",")
@@ -96,7 +92,7 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 				col.Name = strings.Trim(strings.Trim(field, "`[] "), `"`)
 				continue
 			} else if idx == 1 {
-				// col.SQLType = core.SQLType{Name: field, DefaultLength: 0, DefaultLength2: 0}
+				col.Type = field
 			}
 			switch field {
 			case "PRIMARY":
@@ -113,11 +109,7 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 				col.Default = &fields[idx+1]
 			}
 		}
-		// if !col.SQLType.IsNumeric() && !col.DefaultIsEmpty {
-		// 	col.Default = "'" + col.Default + "'"
-		// }
 		cols = append(cols, col)
-		// colSeq = append(colSeq, col.Name)
 	}
 	return cols, nil
 }
@@ -126,7 +118,6 @@ func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := "SELECT sql FROM sqlite_master WHERE type='index' and tbl_name = ?"
 	db.LogSQL(s, args)
-	fmt.Println(s, args)
 
 	rows, err := db.DB().Query(s, args...)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/pangpanglabs/microbot/utils"
+	"github.com/pangpanglabs/microbot/common"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -84,7 +84,7 @@ func MiddlewareWithConfig(handler func(r *http.Request) string, config Middlewar
 				s := fmt.Sprintf("%d", sw.status)
 				d := time.Since(begun).Nanoseconds() / int64(time.Millisecond)
 				ipType := "private"
-				if utils.IsPublicIP(utils.RealIP(r)) {
+				if common.IsPublicIP(common.RealIP(r)) {
 					ipType = "public"
 				}
 

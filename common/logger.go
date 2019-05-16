@@ -1,9 +1,20 @@
-package db
+package common
 
 import (
 	"fmt"
 	"io"
 	"log"
+)
+
+type LogLevel int
+
+const (
+	LOG_DEBUG LogLevel = iota
+	LOG_INFO
+	LOG_WARNING
+	LOG_ERR
+	LOG_OFF
+	LOG_UNKNOWN
 )
 
 // default log options
@@ -14,15 +25,29 @@ const (
 )
 
 type DefaultLogger struct {
-	DEBUG   *log.Logger
-	ERR     *log.Logger
-	INFO    *log.Logger
-	WARN    *log.Logger
-	level   LogLevel
-	showSQL bool
+	DEBUG *log.Logger
+	ERR   *log.Logger
+	INFO  *log.Logger
+	WARN  *log.Logger
+	level LogLevel
 }
 
-var _ ILogger = &DefaultLogger{}
+// logger interface
+type Logger interface {
+	Debug(v ...interface{})
+	Debugf(format string, v ...interface{})
+	Error(v ...interface{})
+	Errorf(format string, v ...interface{})
+	Info(v ...interface{})
+	Infof(format string, v ...interface{})
+	Warn(v ...interface{})
+	Warnf(format string, v ...interface{})
+
+	Level() LogLevel
+	SetLevel(l LogLevel)
+}
+
+var _ Logger = &DefaultLogger{}
 
 // NewDefaultLogger use a special io.Writer as logger output
 func NewDefaultLogger(out io.Writer) *DefaultLogger {
@@ -45,82 +70,68 @@ func NewDefaultLogger3(out io.Writer, prefix string, flag int, l LogLevel) *Defa
 	}
 }
 
-// Debug implement ILogger
+// Debug implement Logger
 func (d *DefaultLogger) Debug(v ...interface{}) {
 	if d.level <= LOG_DEBUG {
 		d.DEBUG.Output(2, fmt.Sprint(v...))
 	}
 }
 
-// Debugf implement ILogger
+// Debugf implement Logger
 func (d *DefaultLogger) Debugf(format string, v ...interface{}) {
 	if d.level <= LOG_DEBUG {
 		d.DEBUG.Output(2, fmt.Sprintf(format, v...))
 	}
 }
 
-// Error implement ILogger
+// Error implement Logger
 func (d *DefaultLogger) Error(v ...interface{}) {
 	if d.level <= LOG_ERR {
 		d.ERR.Output(2, fmt.Sprint(v...))
 	}
 }
 
-// Errorf implement ILogger
+// Errorf implement Logger
 func (d *DefaultLogger) Errorf(format string, v ...interface{}) {
 	if d.level <= LOG_ERR {
 		d.ERR.Output(2, fmt.Sprintf(format, v...))
 	}
 }
 
-// Info implement ILogger
+// Info implement Logger
 func (d *DefaultLogger) Info(v ...interface{}) {
 	if d.level <= LOG_INFO {
 		d.INFO.Output(2, fmt.Sprint(v...))
 	}
 }
 
-// Infof implement ILogger
+// Infof implement Logger
 func (d *DefaultLogger) Infof(format string, v ...interface{}) {
 	if d.level <= LOG_INFO {
 		d.INFO.Output(2, fmt.Sprintf(format, v...))
 	}
 }
 
-// Warn implement ILogger
+// Warn implement Logger
 func (d *DefaultLogger) Warn(v ...interface{}) {
 	if d.level <= LOG_WARNING {
 		d.WARN.Output(2, fmt.Sprint(v...))
 	}
 }
 
-// Warnf implement ILogger
+// Warnf implement Logger
 func (d *DefaultLogger) Warnf(format string, v ...interface{}) {
 	if d.level <= LOG_WARNING {
 		d.WARN.Output(2, fmt.Sprintf(format, v...))
 	}
 }
 
-// Level implement ILogger
+// Level implement Logger
 func (d *DefaultLogger) Level() LogLevel {
 	return d.level
 }
 
-// SetLevel implement ILogger
+// SetLevel implement Logger
 func (d *DefaultLogger) SetLevel(l LogLevel) {
 	d.level = l
-}
-
-// ShowSQL implement ILogger
-func (d *DefaultLogger) ShowSQL(show ...bool) {
-	if len(show) == 0 {
-		d.showSQL = true
-		return
-	}
-	d.showSQL = show[0]
-}
-
-// IsShowSQL implement ILogger
-func (d *DefaultLogger) IsShowSQL() bool {
-	return d.showSQL
 }

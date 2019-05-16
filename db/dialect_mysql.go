@@ -12,7 +12,7 @@ func (db *mysql) Tables() ([]Table, error) {
 	args := []interface{}{db.name}
 	s := "SELECT `TABLE_NAME`, `ENGINE`, `TABLE_ROWS`, `TABLE_COMMENT` FROM " +
 		"`INFORMATION_SCHEMA`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND (`ENGINE` = 'MyISAM' OR `ENGINE` = 'InnoDB' OR `ENGINE` = 'TokuDB')"
-	db.LogSQL(s, db.name)
+	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
 	if err != nil {
@@ -32,7 +32,7 @@ func (db *mysql) Tables() ([]Table, error) {
 		var table Table
 		table.Name = name
 		table.Engine = engine
-		table.Comment = comment
+		table.Comment = &comment
 		table.Rows = tableRows
 		tables = append(tables, table)
 	}
@@ -60,20 +60,12 @@ func (db *mysql) Columns(tableName string) ([]Column, error) {
 		}
 		var col Column
 		col.Name = strings.Trim(columnName, "` ")
-		col.Comment = comment
-		if isNullable == "YES" {
-			col.Nullable = true
-		}
+		col.Comment = &comment
+		col.Nullable = (isNullable == "YES")
 		col.Default = colDefault
 		col.Type = strings.ToLower(colType)
-
-		if colKey == "PRI" {
-			col.IsPrimaryKey = true
-		}
-
-		if extra == "auto_increment" {
-			col.IsAutoIncrement = true
-		}
+		col.IsPrimaryKey = (colKey == "PRI")
+		col.IsAutoIncrement = (extra == "auto_increment")
 		cols = append(cols, col)
 	}
 	return cols, nil

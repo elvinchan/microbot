@@ -31,7 +31,7 @@ func RegisterDialect(dbType DBType, dialectFunc func() Dialect) {
 	dialects[strings.ToLower(string(dbType))] = dialectFunc
 }
 
-// QueryDialect query database dialect if registed
+// QueryDialect query database dialect if registered
 func QueryDialect(dbType DBType) Dialect {
 	if d, ok := dialects[strings.ToLower(string(dbType))]; ok {
 		return d()

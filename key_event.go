@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pangpanglabs/microbot/utils"
+	"github.com/pangpanglabs/microbot/common"
 )
 
 const DefaultListMax = 1000
@@ -33,7 +33,7 @@ func KeyEventController() http.Handler {
 		for iter := keyEventList.data.Back(); iter != nil; iter = iter.Prev() {
 			v = append(v, iter.Value)
 		}
-		utils.RenderDataJson(w, http.StatusOK, v)
+		common.RenderDataJson(w, http.StatusOK, v)
 	})
 }
 

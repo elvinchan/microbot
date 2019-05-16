@@ -1,23 +1,36 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 )
 
 type postgres struct {
 	Base
-	Schema string
+	schema string
+}
+
+// DefaultPostgresSchema default postgres schema
+const DefaultPostgresSchema = "public"
+
+func (db *postgres) Init(d *sql.DB, dbType DBType, dbName string) {
+	db.Base.Init(d, dbType, dbName)
+	db.schema = DefaultPostgresSchema
 }
 
 func (db *postgres) Tables() ([]Table, error) {
 	args := []interface{}{}
-	s := "SELECT tablename FROM pg_tables"
-	if len(db.Schema) != 0 {
-		args = append(args, db.Schema)
-		s = s + " WHERE schemaname = $1"
+	s := `SELECT t.tablename, c.reltuples::bigint AS rows, obj_description(c.oid)
+FROM pg_tables t
+JOIN pg_class c ON t.tablename = c.relname
+JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.schemaname`
+	if len(db.schema) != 0 {
+		args = append(args, db.schema)
+		s = s + "\nWHERE t.schemaname = $1"
 	}
 	db.LogSQL(s, args)
+
 	rows, err := db.DB().Query(s, args...)
 	if err != nil {
 		return nil, err
@@ -26,12 +39,16 @@ func (db *postgres) Tables() ([]Table, error) {
 	tables := make([]Table, 0)
 	for rows.Next() {
 		var name string
-		err = rows.Scan(&name)
+		var comment *string
+		var tableRows int64
+		err = rows.Scan(&name, &tableRows, &comment)
 		if err != nil {
 			return nil, err
 		}
 		var table Table
 		table.Name = name
+		table.Rows = tableRows
+		table.Comment = comment
 		tables = append(tables, table)
 	}
 	return tables, nil
@@ -39,24 +56,25 @@ func (db *postgres) Tables() ([]Table, error) {
 
 func (db *postgres) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
-	s := `SELECT column_name, column_default, is_nullable, data_type, character_maximum_length, numeric_precision, numeric_precision_radix ,
-    CASE WHEN p.contype = 'p' THEN true ELSE false END AS primarykey,
-    CASE WHEN p.contype = 'u' THEN true ELSE false END AS uniquekey
-FROM pg_attribute f
-    JOIN pg_class c ON c.oid = f.attrelid JOIN pg_type t ON t.oid = f.atttypid
-    LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = f.attnum
-    LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_constraint p ON p.conrelid = c.oid AND f.attnum = ANY (p.conkey)
-    LEFT JOIN pg_class AS g ON p.confrelid = g.oid
-    LEFT JOIN INFORMATION_SCHEMA.COLUMNS s ON s.column_name=f.attname AND c.relname=s.table_name
-WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.attnum;`
+	s := `SELECT column_name, column_default, is_nullable, data_type,
+coalesce(character_maximum_length, numeric_precision) AS num_length,
+numeric_scale AS num_scale,
+CASE WHEN p.contype = 'p' THEN true ELSE false END AS primarykey,
+CASE WHEN p.contype = 'u' THEN true ELSE false END AS uniquekey,
+col_description(f.attrelid, f.attnum) AS column_comment
+FROM INFORMATION_SCHEMA.COLUMNS s
+JOIN pg_attribute f ON f.attname = s.column_name
+JOIN pg_class c ON c.oid = f.attrelid AND c.relname = s.table_name
+JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = s.table_schema
+LEFT JOIN pg_constraint p ON p.conrelid = c.oid AND f.attnum = ANY (p.conkey)
+WHERE c.relkind = 'r'::char AND s.table_name = $1%s AND f.attnum > 0
+ORDER BY f.attnum`
 	var f string
-	if len(db.Schema) != 0 {
-		args = append(args, db.Schema)
+	if len(db.schema) != 0 {
+		args = append(args, db.schema)
 		f = " AND s.table_schema = $2"
 	}
 	s = fmt.Sprintf(s, f)
-
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -67,18 +85,15 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 
 	var cols []Column
 	for rows.Next() {
-		col := new(Column)
-
 		var colName, isNullable, dataType string
-		var maxLenStr, colDefault, numPrecision, numRadix *string
+		var colDefault, maxLength, numScale, comment *string
 		var isPK, isUnique bool
-		err = rows.Scan(&colName, &colDefault, &isNullable, &dataType, &maxLenStr, &numPrecision, &numRadix, &isPK, &isUnique)
-		if err != nil {
+		if err = rows.Scan(&colName, &colDefault, &isNullable, &dataType, &maxLength, &numScale, &isPK, &isUnique, &comment); err != nil {
 			return nil, err
 		}
 
+		var col Column
 		col.Name = strings.Trim(colName, `" `)
-
 		if colDefault != nil || isPK {
 			if isPK {
 				col.IsPrimaryKey = true
@@ -86,13 +101,45 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 				col.Default = colDefault
 			}
 		}
-
 		if colDefault != nil && strings.HasPrefix(*colDefault, "nextval(") {
 			col.IsAutoIncrement = true
 		}
-
+		switch dataType {
+		case "character varying":
+			col.Type = "varchar"
+		case "character":
+			col.Type = "char"
+		case "bit varying":
+			col.Type = "varbit"
+		case "timestamp without time zone":
+			col.Type = "timestamp"
+		case "timestamp with time zone":
+			col.Type = "timestamptz"
+		case "time without time zone":
+			col.Type = "time"
+		case "time with time zone":
+			col.Type = "timetz"
+		case "double precision":
+			col.Type = "float8"
+		case "boolean":
+			col.Type = "bool"
+		case "oid":
+			col.Type = "bigint"
+		case "bigserial", "smallserial", "serial":
+			col.IsAutoIncrement = true
+			col.Nullable = false
+			col.Type = dataType
+		default:
+			col.Type = dataType
+		}
+		if maxLength != nil && numScale != nil && *numScale != "0" {
+			col.Type += "(" + *maxLength + "," + *numScale + ")"
+		} else if maxLength != nil {
+			col.Type += "(" + *maxLength + ")"
+		}
 		col.Nullable = (isNullable == "YES")
-		cols = append(cols, *col)
+		col.Comment = comment
+		cols = append(cols, col)
 	}
 
 	return cols, nil
@@ -101,8 +148,8 @@ WHERE c.relkind = 'r'::char AND c.relname = $1%s AND f.attnum > 0 ORDER BY f.att
 func (db *postgres) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := fmt.Sprintf("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=$1")
-	if len(db.Schema) != 0 {
-		args = append(args, db.Schema)
+	if len(db.schema) != 0 {
+		args = append(args, db.schema)
 		s = s + " AND schemaname=$2"
 	}
 	db.LogSQL(s, args)
@@ -148,6 +195,10 @@ func (db *postgres) Indexes(tableName string) (map[string]*Index, error) {
 		index.Columns = append(index.Columns, colNames...)
 	}
 	return indexes, nil
+}
+
+func (b *postgres) SetSchema(schema string) {
+	b.schema = schema
 }
 
 func getIndexColName(indexdef string) []string {

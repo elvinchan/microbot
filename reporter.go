@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pangpanglabs/microbot/common"
 	"github.com/pangpanglabs/microbot/db"
-	"github.com/pangpanglabs/microbot/utils"
 )
 
 type DBPingResult struct {
@@ -46,10 +46,10 @@ func TableInfoController() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		v, err := GetTableInfo()
 		if err != nil {
-			utils.RenderErrorJson(w, http.StatusInternalServerError, err.Error())
+			common.RenderErrorJson(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		utils.RenderDataJson(w, http.StatusOK, v)
+		common.RenderDataJson(w, http.StatusOK, v)
 	})
 }
 

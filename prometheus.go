@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pangpanglabs/microbot/utils"
+	"github.com/pangpanglabs/microbot/common"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -19,8 +19,8 @@ type Option struct {
 
 func MetricsController() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if utils.IsPublicIP(utils.RealIP(r)) {
-			utils.RenderErrorJson(w, http.StatusForbidden, "Not allowed to access")
+		if common.IsPublicIP(common.RealIP(r)) {
+			common.RenderErrorJson(w, http.StatusForbidden, "Not allowed to access")
 		}
 		// Routing
 		target := r.FormValue("target")
@@ -47,7 +47,7 @@ func ProfController() http.Handler {
 
 			if durationExceedsWriteTimeout(r, float64(sec)) {
 				w.Header().Set("X-Go-Pprof", "1")
-				utils.RenderErrorJson(w, http.StatusBadRequest, "Profile duration exceeds server's WriteTimeout")
+				common.RenderErrorJson(w, http.StatusBadRequest, "Profile duration exceeds server's WriteTimeout")
 				return
 			}
 
@@ -59,7 +59,7 @@ func ProfController() http.Handler {
 				// StartCPUProfile failed, so no writes yet.
 				w.Header().Set("X-Go-Pprof", "1")
 				w.Header().Del("Content-Disposition")
-				utils.RenderErrorJson(w, http.StatusInternalServerError,
+				common.RenderErrorJson(w, http.StatusInternalServerError,
 					fmt.Sprintf("Could not enable CPU profiling: %s", err))
 				return
 			}
@@ -69,7 +69,7 @@ func ProfController() http.Handler {
 			p := pprof.Lookup(name)
 			if p == nil {
 				w.Header().Set("X-Go-Pprof", "1")
-				utils.RenderErrorJson(w, http.StatusNotFound, "Unknown profile")
+				common.RenderErrorJson(w, http.StatusNotFound, "Unknown profile")
 				return
 			}
 			gc, _ := strconv.Atoi(r.FormValue("gc"))
