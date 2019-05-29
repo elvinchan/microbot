@@ -46,11 +46,11 @@ type Base struct {
 
 type Table struct {
 	Name    string   `json:"name"`
-	Rows    int64    `json:"rows"`
+	Rows    int64    `json:"rows"`             // TODO: Not support SQLite currently (maybe SELECT COUNT(1) ... ?)
 	Engine  string   `json:"engine,omitempty"` // Only available for MySQL currently
 	Indexes []Index  `json:"indexes"`
 	Columns []Column `json:"columns"`
-	Comment *string  `json:"comment"`
+	Comment *string  `json:"comment"` // Not available for SQLite
 }
 
 type Column struct {
@@ -60,8 +60,8 @@ type Column struct {
 	Default         *string  `json:"default"`
 	Indexes         []string `json:"indexes"`
 	IsPrimaryKey    bool     `json:"isPrimaryKey"`
-	IsAutoIncrement bool     `json:"isAutoIncrement"`
-	Comment         *string  `json:"comment"`
+	IsAutoIncrement bool     `json:"isAutoIncrement"` // Not available for Oracle
+	Comment         *string  `json:"comment"`         // Not available for SQLite
 }
 
 type Index struct {

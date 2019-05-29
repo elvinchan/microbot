@@ -19,6 +19,8 @@ type Option struct {
 
 func MetricsController() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("-----IP-----", r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"))
+		fmt.Println("-----Header-----", r.Header)
 		if common.IsPublicIP(common.RealIP(r)) {
 			common.RenderErrorJson(w, http.StatusForbidden, "Not allowed to access")
 		}

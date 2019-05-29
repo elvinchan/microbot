@@ -13,7 +13,7 @@ type sqlite3 struct {
 
 func (db *sqlite3) Tables() ([]Table, error) {
 	args := []interface{}{}
-	s := "SELECT name FROM sqlite_master WHERE type='table'"
+	s := "SELECT name FROM sqlite_master WHERE type = 'table'"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -38,7 +38,7 @@ func (db *sqlite3) Tables() ([]Table, error) {
 
 func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
-	s := "SELECT sql FROM sqlite_master WHERE type='table' and name = ?"
+	s := "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -47,22 +47,22 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 	}
 	defer rows.Close()
 
-	var name string
+	var originSQL sql.NullString
 	for rows.Next() {
-		if err = rows.Scan(&name); err != nil {
+		if err = rows.Scan(&originSQL); err != nil {
 			return nil, err
 		}
 		break
 	}
 
-	if name == "" {
+	if !originSQL.Valid || originSQL.String == "" {
 		return nil, errors.New("microbot: no table named " + tableName)
 	}
-
-	nStart := strings.Index(name, "(")
-	nEnd := strings.LastIndex(name, ")")
+	sql := originSQL.String
+	nStart := strings.Index(sql, "(")
+	nEnd := strings.LastIndex(sql, ")")
 	reg := regexp.MustCompile(`[^\(,\)]*(\([^\(]*\))?`)
-	colCreates := reg.FindAllString(name[nStart+1:nEnd], -1)
+	colCreates := reg.FindAllString(sql[nStart+1:nEnd], -1)
 	var cols []Column
 	for _, colStr := range colCreates {
 		reg = regexp.MustCompile(`,\s`)
@@ -116,7 +116,7 @@ func (db *sqlite3) Columns(tableName string) ([]Column, error) {
 
 func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
-	s := "SELECT sql FROM sqlite_master WHERE type='index' and tbl_name = ?"
+	s := "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ?"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -127,18 +127,15 @@ func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 
 	indexes := make(map[string]*Index)
 	for rows.Next() {
-		var tmpSQL sql.NullString
-		err = rows.Scan(&tmpSQL)
-		if err != nil {
+		var originSQL sql.NullString
+		if err = rows.Scan(&originSQL); err != nil {
 			return nil, err
 		}
 
-		if !tmpSQL.Valid {
+		if !originSQL.Valid {
 			continue
 		}
-		sql := tmpSQL.String
-
-		index := new(Index)
+		sql := originSQL.String
 		nNStart := strings.Index(sql, "INDEX")
 		nNEnd := strings.Index(sql, "ON")
 		if nNStart == -1 || nNEnd == -1 {
@@ -146,8 +143,8 @@ func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 		}
 
 		indexName := strings.Trim(sql[nNStart+6:nNEnd], "` []")
+		index := new(Index)
 		index.Name = indexName
-
 		if strings.HasPrefix(sql, "CREATE UNIQUE INDEX") {
 			index.IsUnique = true
 		}
@@ -155,12 +152,10 @@ func (db *sqlite3) Indexes(tableName string) (map[string]*Index, error) {
 		nStart := strings.Index(sql, "(")
 		nEnd := strings.Index(sql, ")")
 		colIndexes := strings.Split(sql[nStart+1:nEnd], ",")
-
 		for _, col := range colIndexes {
 			index.Columns = append(index.Columns, strings.Trim(col, "` []"))
 		}
 		indexes[index.Name] = index
 	}
-
 	return indexes, nil
 }
