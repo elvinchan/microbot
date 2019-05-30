@@ -57,7 +57,7 @@ JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.schemaname`
 func (db *postgres) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
 	s := `SELECT column_name, column_default, is_nullable, data_type,
-coalesce(character_maximum_length, numeric_precision) AS num_length,
+COALESCE(character_maximum_length, numeric_precision) AS num_length,
 numeric_scale AS num_scale,
 CASE WHEN p.contype = 'p' THEN true ELSE false END AS primarykey,
 CASE WHEN p.contype = 'u' THEN true ELSE false END AS uniquekey,
@@ -121,18 +121,18 @@ ORDER BY f.attnum`
 			col.Type = "timetz"
 		case "double precision":
 			col.Type = "float8"
+			maxLength = nil
 		case "boolean":
 			col.Type = "bool"
 		case "oid":
 			col.Type = "bigint"
-		case "bigserial", "smallserial", "serial":
-			col.IsAutoIncrement = true
-			col.Nullable = false
+		case "real", "smallint", "integer", "bigint":
 			col.Type = dataType
+			maxLength = nil
 		default:
 			col.Type = dataType
 		}
-		if maxLength != nil && numScale != nil && *numScale != "0" {
+		if maxLength != nil && numScale != nil && col.Type == "numeric" {
 			col.Type += "(" + *maxLength + "," + *numScale + ")"
 		} else if maxLength != nil {
 			col.Type += "(" + *maxLength + ")"
@@ -176,14 +176,6 @@ func (db *postgres) Indexes(tableName string) (map[string]*Index, error) {
 		if strings.HasPrefix(indexdef, "CREATE UNIQUE INDEX") {
 			isUnique = true
 		}
-		colNames = getIndexColName(indexdef)
-		if strings.HasPrefix(indexName, "IDX_"+tableName) || strings.HasPrefix(indexName, "UQE_"+tableName) {
-			newIdxName := indexName[5+len(tableName):]
-			if newIdxName != "" {
-				indexName = newIdxName
-			}
-		}
-
 		var index *Index
 		var ok bool
 		if index, ok = indexes[indexName]; !ok {
@@ -192,6 +184,7 @@ func (db *postgres) Indexes(tableName string) (map[string]*Index, error) {
 			index.Name = indexName
 			indexes[indexName] = index
 		}
+		colNames = getIndexColName(indexdef)
 		index.Columns = append(index.Columns, colNames...)
 	}
 	return indexes, nil
