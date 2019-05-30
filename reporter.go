@@ -38,8 +38,9 @@ func PingDB() []DBPingResult {
 }
 
 type TableInfo struct {
-	DBType db.DBType  `json:"dbType"`
-	Tables []db.Table `json:"tables"`
+	DBType  db.DBType  `json:"dbType"`
+	Version string     `json:"version"`
+	Tables  []db.Table `json:"tables"`
 }
 
 func TableInfoController() http.Handler {

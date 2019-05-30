@@ -26,6 +26,7 @@ type Dialect interface {
 	Init(*sql.DB, DBType, string)
 	DB() *sql.DB
 	DBType() DBType
+	Version() string
 	Tables() ([]Table, error)
 	// not use map in result because we need sequence of Columns
 	Columns(tableName string) ([]Column, error)
@@ -45,7 +46,8 @@ type Base struct {
 }
 
 type Table struct {
-	Name    string   `json:"name"`
+	Name string `json:"name"`
+	// Estimate value when PostgreSQL
 	Rows    int64    `json:"rows"`             // TODO: Not support SQLite currently (maybe SELECT COUNT(1) ... ?)
 	Engine  string   `json:"engine,omitempty"` // Only available for MySQL currently
 	Indexes []Index  `json:"indexes"`

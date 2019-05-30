@@ -11,6 +11,10 @@ type sqlite3 struct {
 	Base
 }
 
+func (db *sqlite3) Version() string {
+	return ""
+}
+
 func (db *sqlite3) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := "SELECT name FROM sqlite_master WHERE type = 'table'"

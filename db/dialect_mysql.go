@@ -8,6 +8,10 @@ type mysql struct {
 	Base
 }
 
+func (db *mysql) Version() string {
+	return ""
+}
+
 func (db *mysql) Tables() ([]Table, error) {
 	args := []interface{}{db.name}
 	s := "SELECT `TABLE_NAME`, `ENGINE`, `TABLE_ROWS`, `TABLE_COMMENT` FROM " +

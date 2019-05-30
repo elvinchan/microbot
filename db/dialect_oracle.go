@@ -9,6 +9,10 @@ type oracle struct {
 	Base
 }
 
+func (db *oracle) Version() string {
+	return ""
+}
+
 func (db *oracle) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := "SELECT T.TABLE_NAME, T.NUM_ROWS, C.COMMENTS FROM USER_TABLES T " +

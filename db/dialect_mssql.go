@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -9,10 +10,14 @@ type mssql struct {
 	Base
 }
 
+func (db *mssql) Version() string {
+	return ""
+}
+
 func (db *mssql) Tables() ([]Table, error) {
 	args := []interface{}{}
-	s := "SELECT a.name, b.rows FROM sys.sysobjects AS a" +
-		"INNER JOIN sys.sysindexes AS b ON a.id = b.id WHERE (b.indid IN (0, 1)) AND (a.type = 'U')"
+	s := "SELECT a.name, b.rows FROM sys.sysobjects AS a " +
+		"INNER JOIN sys.sysindexes AS b ON a.id = b.id WHERE b.indid IN (0, 1) AND a.type = 'U'"
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -24,29 +29,27 @@ func (db *mssql) Tables() ([]Table, error) {
 	var tables []Table
 	for rows.Next() {
 		var table Table
-		var name string
-		var tableRows int64
-		if err = rows.Scan(&name, &tableRows); err != nil {
+		if err = rows.Scan(&table.Name, &table.Rows); err != nil {
 			return nil, err
 		}
-		table.Name = strings.Trim(name, "` ")
-		table.Rows = tableRows
+		fmt.Printf("----%+v---", table.Name)
+		table.Name = strings.Trim(table.Name, "` ")
 		tables = append(tables, table)
 	}
 	return tables, nil
 }
 
 func (db *mssql) Columns(tableName string) ([]Column, error) {
-	args := []interface{}{db.name, tableName}
+	args := []interface{}{tableName}
 	s := `SELECT a.name AS name, b.name AS ctype, a.max_length, a.precision, a.scale, a.is_nullable AS nullable,
 REPLACE(REPLACE(ISNULL(c.text, ''), '(', ''), ')', '') AS vdefault,
-ISNULL(i.is_primary_key, 0)
+ISNULL(i.is_primary_key, 0) AS is_primary_key
 FROM sys.columns a
 LEFT JOIN sys.types b ON a.user_type_id = b.user_type_id
 LEFT JOIN sys.syscomments c ON a.default_object_id = c.id
 LEFT OUTER JOIN sys.index_columns ic ON ic.object_id = a.object_id AND ic.column_id = a.column_id
 LEFT OUTER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id 
-WHERE a.object_id = object_id('` + tableName + `')`
+WHERE a.object_id = object_id(?)`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -68,7 +71,29 @@ WHERE a.object_id = object_id('` + tableName + `')`
 		col.Nullable = nullable
 		col.Default = &vdefault
 		col.IsPrimaryKey = isPK
-		// TODO col.Length
+
+		switch ctype {
+		case "decimal", "numeric":
+			col.Type = fmt.Sprintf("%s(%d,%d)", ctype, precision, scale)
+		case "binary", "char", "varbinary", "varchar":
+			if maxLen > 0 {
+				col.Type = fmt.Sprintf("%s(%d)", ctype, maxLen)
+			} else if maxLen == -1 {
+				col.Type = ctype + "(max)"
+			} else {
+				col.Type = ctype
+			}
+		case "nchar", "nvarchar":
+			if maxLen > 0 {
+				col.Type = fmt.Sprintf("%s(%d)", ctype, maxLen/2)
+			} else if maxLen == -1 {
+				col.Type = ctype + "(max)"
+			} else {
+				col.Type = ctype
+			}
+		default:
+			col.Type = ctype
+		}
 		cols = append(cols, col)
 	}
 	return cols, nil
@@ -77,11 +102,11 @@ WHERE a.object_id = object_id('` + tableName + `')`
 func (db *mssql) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
 	s := `SELECT IXS.NAME AS [INDEX_NAME], C.NAME AS [COLUMN_NAME], IXS.is_unique AS [IS_UNIQUE] 
-	FROM SYS.INDEXES IXS
-	INNER JOIN SYS.INDEX_COLUMNS IXCS ON IXS.OBJECT_ID = IXCS.OBJECT_ID AND IXS.INDEX_ID = IXCS.INDEX_ID
-	INNER JOIN SYS.COLUMNS C ON IXS.OBJECT_ID = C.OBJECT_ID AND IXCS.COLUMN_ID= C.COLUMN_ID 
-	WHERE IXS.TYPE_DESC= 'NONCLUSTERED'
-	AND OBJECT_NAME(IXS.OBJECT_ID) = ?`
+FROM SYS.INDEXES IXS
+INNER JOIN SYS.INDEX_COLUMNS IXCS ON IXS.OBJECT_ID = IXCS.OBJECT_ID AND IXS.INDEX_ID = IXCS.INDEX_ID
+INNER JOIN SYS.COLUMNS C ON IXS.OBJECT_ID = C.OBJECT_ID AND IXCS.COLUMN_ID= C.COLUMN_ID 
+WHERE IXS.TYPE_DESC= 'NONCLUSTERED'
+AND OBJECT_NAME(IXS.OBJECT_ID) = ?`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)

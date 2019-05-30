@@ -11,7 +11,7 @@ func init() {
 		dbType     DBType
 		getDialect func() Dialect
 	}{
-		{"mssql", func() Dialect { return &mysql{} }},
+		{"mssql", func() Dialect { return &mssql{} }},
 		{"mysql", func() Dialect { return &mysql{} }},
 		{"postgres", func() Dialect { return &postgres{} }},
 		{"sqlite3", func() Dialect { return &sqlite3{} }},

@@ -19,6 +19,10 @@ func (db *postgres) Init(d *sql.DB, dbType DBType, dbName string) {
 	db.schema = DefaultPostgresSchema
 }
 
+func (db *postgres) Version() string {
+	return ""
+}
+
 func (db *postgres) Tables() ([]Table, error) {
 	args := []interface{}{}
 	s := `SELECT t.tablename, c.reltuples::bigint AS rows, obj_description(c.oid)
