@@ -28,7 +28,7 @@ func prepareDialect() error {
 	dialect.Init(d, DBType(*dbType), *dbName)
 	runtime.SetFinalizer(dialect, close)
 
-	// var sql string
+	var sql string
 	switch *dbType {
 	case "postgres":
 		rows, err := dialect.DB().Query("SELECT 1 FROM pg_database WHERE datname = $1", DBName)
@@ -47,15 +47,40 @@ func prepareDialect() error {
 				return fmt.Errorf("create schema error: %v", err)
 			}
 		}
-		// case "sqlite3":
-
+	case "sqlite3":
+		sql = sqliteSQL
 	}
-	// if _, err = dialect.DB().Exec(sql); err != nil {
-	// 	return err
-	// }
+	if _, err = dialect.DB().Exec(sql); err != nil {
+		return err
+	}
 	return nil
 }
 
 func close(d Dialect) {
 	d.DB().Close()
 }
+
+const sqliteSQL = `
+PRAGMA foreign_keys = false;
+
+-- ----------------------------
+-- Table structure for user
+-- ----------------------------
+DROP TABLE IF EXISTS "user";
+CREATE TABLE "user" (
+  "id" integer PRIMARY KEY AUTOINCREMENT,
+  "desc" text,
+  "income" real(9,3),
+  "attrs" blob
+);
+
+-- ----------------------------
+-- Indexes structure for table user
+-- ----------------------------
+CREATE UNIQUE INDEX "main"."IDX_attrs"
+ON "user" (
+  "attrs" ASC
+);
+
+PRAGMA foreign_keys = true;
+`

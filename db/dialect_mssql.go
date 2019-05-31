@@ -16,8 +16,11 @@ func (db *mssql) Version() string {
 
 func (db *mssql) Tables() ([]Table, error) {
 	args := []interface{}{}
-	s := "SELECT a.name, b.rows FROM sys.sysobjects AS a " +
-		"INNER JOIN sys.sysindexes AS b ON a.id = b.id WHERE b.indid IN (0, 1) AND a.type = 'U'"
+	s := `SELECT s.name, i.rows, ep.value AS comment
+FROM sys.sysobjects AS s
+JOIN sys.sysindexes AS i ON s.id = i.id AND i.indid IN (0, 1)
+LEFT JOIN sys.extended_properties ep ON s.id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+WHERE s.type = 'U'`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -29,11 +32,9 @@ func (db *mssql) Tables() ([]Table, error) {
 	var tables []Table
 	for rows.Next() {
 		var table Table
-		if err = rows.Scan(&table.Name, &table.Rows); err != nil {
+		if err = rows.Scan(&table.Name, &table.Rows, &table.Comment); err != nil {
 			return nil, err
 		}
-		fmt.Printf("----%+v---", table.Name)
-		table.Name = strings.Trim(table.Name, "` ")
 		tables = append(tables, table)
 	}
 	return tables, nil
@@ -41,15 +42,16 @@ func (db *mssql) Tables() ([]Table, error) {
 
 func (db *mssql) Columns(tableName string) ([]Column, error) {
 	args := []interface{}{tableName}
-	s := `SELECT a.name AS name, b.name AS ctype, a.max_length, a.precision, a.scale, a.is_nullable AS nullable,
-REPLACE(REPLACE(ISNULL(c.text, ''), '(', ''), ')', '') AS vdefault,
-ISNULL(i.is_primary_key, 0) AS is_primary_key
-FROM sys.columns a
-LEFT JOIN sys.types b ON a.user_type_id = b.user_type_id
-LEFT JOIN sys.syscomments c ON a.default_object_id = c.id
-LEFT OUTER JOIN sys.index_columns ic ON ic.object_id = a.object_id AND ic.column_id = a.column_id
-LEFT OUTER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id 
-WHERE a.object_id = object_id(?)`
+	s := `SELECT c.name AS name, t.name AS ctype, c.max_length, c.precision, c.scale, c.is_nullable AS nullable,
+REPLACE(REPLACE(ISNULL(s.text, ''), '(', ''), ')', '') AS vdefault,
+ISNULL(i.is_primary_key, 0) AS is_primary_key, ep.value AS comment
+FROM sys.columns c
+LEFT JOIN sys.types t ON c.user_type_id = t.user_type_id
+LEFT JOIN sys.syscomments s ON c.default_object_id = s.id
+LEFT JOIN sys.index_columns ic ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+LEFT JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+LEFT JOIN sys.extended_properties ep ON c.object_id = ep.major_id AND c.column_id = ep.minor_id AND ep.name = 'MS_Description'
+WHERE c.object_id = object_id(?)`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
@@ -63,7 +65,8 @@ WHERE a.object_id = object_id(?)`
 		var name, ctype, vdefault string
 		var maxLen, precision, scale int
 		var nullable, isPK bool
-		if err = rows.Scan(&name, &ctype, &maxLen, &precision, &scale, &nullable, &vdefault, &isPK); err != nil {
+		var comment *string
+		if err = rows.Scan(&name, &ctype, &maxLen, &precision, &scale, &nullable, &vdefault, &isPK, &comment); err != nil {
 			return nil, err
 		}
 		var col Column
@@ -71,6 +74,7 @@ WHERE a.object_id = object_id(?)`
 		col.Nullable = nullable
 		col.Default = &vdefault
 		col.IsPrimaryKey = isPK
+		col.Comment = comment
 
 		switch ctype {
 		case "decimal", "numeric":
@@ -101,12 +105,11 @@ WHERE a.object_id = object_id(?)`
 
 func (db *mssql) Indexes(tableName string) (map[string]*Index, error) {
 	args := []interface{}{tableName}
-	s := `SELECT IXS.NAME AS [INDEX_NAME], C.NAME AS [COLUMN_NAME], IXS.is_unique AS [IS_UNIQUE] 
-FROM SYS.INDEXES IXS
-INNER JOIN SYS.INDEX_COLUMNS IXCS ON IXS.OBJECT_ID = IXCS.OBJECT_ID AND IXS.INDEX_ID = IXCS.INDEX_ID
-INNER JOIN SYS.COLUMNS C ON IXS.OBJECT_ID = C.OBJECT_ID AND IXCS.COLUMN_ID= C.COLUMN_ID 
-WHERE IXS.TYPE_DESC= 'NONCLUSTERED'
-AND OBJECT_NAME(IXS.OBJECT_ID) = ?`
+	s := `SELECT i.name AS index_name, c.name AS column_name, i.is_unique AS is_unique
+FROM sys.indexes i
+JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+JOIN sys.columns c ON i.object_id = c.object_id AND ic.column_id = c.column_id
+WHERE i.type_desc = 'NONCLUSTERED' AND OBJECT_NAME(i.object_id) = ?`
 	db.LogSQL(s, args)
 
 	rows, err := db.DB().Query(s, args...)
