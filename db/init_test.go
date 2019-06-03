@@ -12,15 +12,37 @@ const DBName = "microbot_test"
 var (
 	dialect Dialect
 
-	dbType = flag.String("db_type", "postgres", "the tested DB type")
-	// connStr = flag.String("conn_str", "./test.db", "test DB connection string")
-	connStr = flag.String("conn_str", "host=127.0.0.1 port=5432 user=postgres password=123456 dbname=postgres sslmode=disable", "test DB connection string")
+	dbType  = flag.String("db_type", "sqlite3", "the tested DB type")
+	connStr = flag.String("conn_str", "", "test DB connection string")
 	schema  = flag.String("schema", "", "test DB schema")
-	dbName  = flag.String("db_name", "postgres", "test DB name")
+	dbName  = flag.String("db_name", "xorm_test", "test DB name")
 )
 
+func connection(dbType string) (string, error) {
+	if *connStr != "" {
+		return *connStr, nil
+	}
+	switch dbType {
+	case "sqlite3":
+		return ":memory:", nil
+	case "postgres":
+		return "host=127.0.0.1 port=5432 user=postgres password=123456 dbname=xorm_test sslmode=disable", nil
+	case "mysql":
+		return "root:@/xorm_test", nil
+	case "oci8":
+		return "xorm_test/123456@47.103.34.110:1521/xe", nil
+	case "mssql":
+		return "", nil
+	}
+	return "", fmt.Errorf("invalid dbType: %s", dbType)
+}
+
 func prepareDialect() error {
-	d, err := sql.Open(*dbType, *connStr)
+	conn, err := connection(*dbType)
+	if err != nil {
+		return err
+	}
+	d, err := sql.Open(*dbType, conn)
 	if err != nil {
 		return err
 	}
@@ -61,11 +83,6 @@ func close(d Dialect) {
 }
 
 const sqliteSQL = `
-PRAGMA foreign_keys = false;
-
--- ----------------------------
--- Table structure for user
--- ----------------------------
 DROP TABLE IF EXISTS "user";
 CREATE TABLE "user" (
   "id" integer PRIMARY KEY AUTOINCREMENT,
@@ -74,13 +91,20 @@ CREATE TABLE "user" (
   "attrs" blob
 );
 
--- ----------------------------
--- Indexes structure for table user
--- ----------------------------
 CREATE UNIQUE INDEX "main"."IDX_attrs"
 ON "user" (
   "attrs" ASC
 );
 
-PRAGMA foreign_keys = true;
+DROP TABLE IF EXISTS "phone";
+CREATE TABLE "phone" (
+  "id" integer PRIMARY KEY AUTOINCREMENT,
+  "userId" integer,
+  "num" text
+);
+
+CREATE UNIQUE INDEX "main"."IDX_phone"
+ON "phone" (
+  "userId" ASC
+);
 `
